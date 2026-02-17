@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trellis-local-tool"
+version = "0.1.0"
+description = "Local CLI tool to convert images to 3D GLB files using Microsoft's TRELLIS"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["3D", "image-to-3D", "GLB", "TRELLIS", "AI", "computer-vision"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "click>=8.0.0",
+    "pillow>=9.0.0",
+    "PyYAML>=6.0",
+    "tqdm>=4.65.0",
+    "rich>=13.0.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.24.0",
+    "trimesh>=3.21.0",
+    "pygltflib>=1.16.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+trellis-tool = "trellis_tool.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/trellis-local-tool"
+Repository = "https://github.com/yourusername/trellis-local-tool"
+Documentation = "https://github.com/yourusername/trellis-local-tool#readme"
+
+[tool.setuptools]
+packages = ["trellis_tool", "trellis_tool.core", "trellis_tool.utils"]
+package-dir = {"" = "src"}
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"

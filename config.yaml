@@ -1,0 +1,56 @@
+# TRELLIS Local Tool Configuration
+
+model:
+  # Model name: "microsoft/TRELLIS-image-large" (recommended)
+  # Other options: TRELLIS-text-base, TRELLIS-text-large, TRELLIS-text-xlarge
+  name: "microsoft/TRELLIS-image-large"
+
+  # Device: "cuda", "cpu", or "auto" (auto-detects GPU)
+  device: "auto"
+
+  # Cache directory for downloaded models
+  cache_dir: "~/.cache/trellis"
+
+processing:
+  # Random seed for reproducibility (set to null for random)
+  seed: 1
+
+  # Number of inference steps (higher = better quality but slower)
+  steps: 50
+
+  # Sparse structure sparsity (0.0-1.0, higher = sparser)
+  sparsity: 0.5
+
+  # Slat sampling temperature
+  slat_sampler_params:
+    cfg: 7.5
+    steps: 12
+
+output:
+  # Output format: "glb", "obj", or "ply"
+  format: "glb"
+
+  # Texture resolution: 512, 1024, 2048, 4096
+  texture_size: 2048
+
+  # Optimize mesh (reduces polygon count)
+  optimize: true
+
+  # Target polygon count for optimization (null = auto)
+  target_faces: null
+
+  # Output directory
+  output_dir: "./output"
+
+  # Naming pattern: "{name}_{timestamp}", "{name}_{seed}", or custom
+  naming_pattern: "{name}"
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+  # Log file path (null = console only)
+  log_file: null
+
+  # Show progress bars
+  show_progress: true
