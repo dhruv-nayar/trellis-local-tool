@@ -6,12 +6,19 @@ Deploy with:
 
 Test locally:
     modal serve modal_app.py
+
+Set API keys:
+    modal secret create trellis-api-keys API_KEYS="key1,key2,key3"
 """
 
 import modal
+import os
 
 # Define the Modal app
 app = modal.App("trellis-api")
+
+# Secret for API keys (comma-separated list)
+api_keys_secret = modal.Secret.from_name("trellis-api-keys", required_keys=["API_KEYS"])
 
 # Volume for caching the TRELLIS model (~5GB)
 model_volume = modal.Volume.from_name("trellis-model-cache", create_if_missing=True)
@@ -178,18 +185,47 @@ def trellis_gpu_inference(image_bytes: bytes, seed: int = 0, texture_size: int =
 @app.function(
     image=rembg_image,
     timeout=600,
+    secrets=[api_keys_secret],
 )
 @modal.asgi_app()
 def fastapi_app():
     """Serve the FastAPI application."""
-    from fastapi import FastAPI, UploadFile, File, HTTPException
+    from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Security
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import Response
+    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     from pathlib import Path
+    import os
+
+    # Load API keys from environment (set via Modal secret)
+    API_KEYS = set(os.environ.get("API_KEYS", "").split(","))
+    API_KEYS.discard("")  # Remove empty strings
+
+    security = HTTPBearer()
+
+    def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)):
+        """Verify the API key from the Authorization header."""
+        if not API_KEYS:
+            # No keys configured = open access (for testing)
+            return credentials.credentials if credentials else "anonymous"
+
+        if not credentials:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing API key. Use header: Authorization: Bearer <your-key>"
+            )
+
+        if credentials.credentials not in API_KEYS:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid API key"
+            )
+
+        return credentials.credentials
 
     fastapi = FastAPI(
         title="TRELLIS API (Modal)",
-        version="2.1.0-modal-gpu",
+        version="2.2.0-modal-gpu",
     )
 
     fastapi.add_middleware(
@@ -204,12 +240,13 @@ def fastapi_app():
     def root():
         return {
             "name": "TRELLIS API (Modal)",
-            "version": "2.1.0-modal-gpu",
+            "version": "2.2.0-modal-gpu",
             "endpoints": {
                 "health": "/health",
                 "rembg": "/api/v1/rembg/",
                 "trellis": "/api/v1/trellis/",
             },
+            "auth": "Required. Use header: Authorization: Bearer <your-key>",
             "info": {
                 "trellis": "Self-hosted on Modal GPU (A10G, 24GB VRAM)",
                 "rembg": "CPU-based background removal",
@@ -218,10 +255,13 @@ def fastapi_app():
 
     @fastapi.get("/health")
     def health():
-        return {"status": "healthy", "version": "2.1.0-modal-gpu"}
+        return {"status": "healthy", "version": "2.2.0-modal-gpu"}
 
     @fastapi.post("/api/v1/rembg/")
-    async def remove_background(files: list[UploadFile] = File(...)):
+    async def remove_background(
+        files: list[UploadFile] = File(...),
+        api_key: str = Depends(verify_api_key),
+    ):
         """Remove background from images"""
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
@@ -258,6 +298,7 @@ def fastapi_app():
     async def image_to_3d(
         files: list[UploadFile] = File(...),
         seed: int = 0,
+        api_key: str = Depends(verify_api_key),
     ):
         """Convert image to 3D GLB model using self-hosted TRELLIS on GPU"""
         if not files:

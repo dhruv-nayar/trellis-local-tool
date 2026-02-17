@@ -30,6 +30,20 @@ Once deployed, your API will be available at:
    modal token new
    ```
 
+### Set Up API Keys
+
+Before deploying, create a Modal secret with your API keys:
+
+```bash
+modal secret create trellis-api-keys API_KEYS="your-key-1,your-key-2,your-key-3"
+```
+
+You can add multiple comma-separated keys. To update keys later:
+
+```bash
+modal secret create trellis-api-keys API_KEYS="new-key-1,new-key-2" --force
+```
+
 ### Deploy
 
 ```bash
@@ -85,6 +99,7 @@ Content-Type: multipart/form-data
 **Example:**
 ```bash
 curl -X POST \
+  -H "Authorization: Bearer your-api-key" \
   -F "files=@input.jpg" \
   https://your-username--trellis-api-fastapi-app.modal.run/api/v1/rembg/ \
   --output output_nobg.png
@@ -97,6 +112,7 @@ Convert an image to a 3D GLB model using Microsoft's TRELLIS.
 ```bash
 POST /api/v1/trellis/
 Content-Type: multipart/form-data
+Authorization: Bearer your-api-key
 ```
 
 **Parameters:**
@@ -110,6 +126,7 @@ Content-Type: multipart/form-data
 **Example:**
 ```bash
 curl -X POST \
+  -H "Authorization: Bearer your-api-key" \
   -F "files=@object.png" \
   https://your-username--trellis-api-fastapi-app.modal.run/api/v1/trellis/ \
   --output model.glb
@@ -122,14 +139,19 @@ curl -X POST \
 For best results, first remove the background, then convert to 3D:
 
 ```bash
+# Set your API key
+export TRELLIS_API_KEY="your-api-key"
+
 # Step 1: Remove background
 curl -X POST \
+  -H "Authorization: Bearer $TRELLIS_API_KEY" \
   -F "files=@photo.jpg" \
   https://your-username--trellis-api-fastapi-app.modal.run/api/v1/rembg/ \
   --output photo_nobg.png
 
 # Step 2: Convert to 3D
 curl -X POST \
+  -H "Authorization: Bearer $TRELLIS_API_KEY" \
   -F "files=@photo_nobg.png" \
   https://your-username--trellis-api-fastapi-app.modal.run/api/v1/trellis/ \
   --output model.glb
@@ -141,12 +163,16 @@ curl -X POST \
 import requests
 
 BASE_URL = "https://your-username--trellis-api-fastapi-app.modal.run"
+API_KEY = "your-api-key"
+
+HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
 def remove_background(image_path: str, output_path: str):
     """Remove background from an image."""
     with open(image_path, "rb") as f:
         response = requests.post(
             f"{BASE_URL}/api/v1/rembg/",
+            headers=HEADERS,
             files={"files": f}
         )
     response.raise_for_status()
@@ -159,6 +185,7 @@ def image_to_3d(image_path: str, output_path: str, seed: int = 0):
     with open(image_path, "rb") as f:
         response = requests.post(
             f"{BASE_URL}/api/v1/trellis/",
+            headers=HEADERS,
             files={"files": f},
             data={"seed": seed}
         )
@@ -176,6 +203,7 @@ image_to_3d("photo_nobg.png", "model.glb", seed=42)
 
 ```typescript
 const BASE_URL = "https://your-username--trellis-api-fastapi-app.modal.run";
+const API_KEY = "your-api-key";
 
 async function removeBackground(imageFile: File): Promise<Blob> {
   const formData = new FormData();
@@ -183,6 +211,7 @@ async function removeBackground(imageFile: File): Promise<Blob> {
 
   const response = await fetch(`${BASE_URL}/api/v1/rembg/`, {
     method: "POST",
+    headers: { "Authorization": `Bearer ${API_KEY}` },
     body: formData,
   });
 
@@ -197,6 +226,7 @@ async function imageToGlb(imageFile: File, seed = 0): Promise<Blob> {
 
   const response = await fetch(`${BASE_URL}/api/v1/trellis/`, {
     method: "POST",
+    headers: { "Authorization": `Bearer ${API_KEY}` },
     body: formData,
   });
 
@@ -224,6 +254,65 @@ imageInput?.addEventListener("change", async (e) => {
   a.download = "model.glb";
   a.click();
 });
+```
+
+## API Key Management
+
+### Creating Keys
+
+API keys are stored as a Modal secret. Create or update keys:
+
+```bash
+# Create initial keys
+modal secret create trellis-api-keys API_KEYS="key1,key2,key3"
+
+# Update keys (use --force to overwrite)
+modal secret create trellis-api-keys API_KEYS="new-key1,new-key2" --force
+```
+
+### Key Format
+
+- Keys are comma-separated
+- No spaces around commas
+- Keys can be any string (recommend UUID or secure random strings)
+
+**Generating secure keys:**
+```bash
+# Generate a secure random key
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Or use uuidgen
+uuidgen
+```
+
+### Distributing Keys
+
+Give users their API key and the endpoint URL:
+
+```
+API Endpoint: https://your-username--trellis-api-fastapi-app.modal.run
+API Key: their-unique-key
+
+Usage:
+curl -X POST \
+  -H "Authorization: Bearer their-unique-key" \
+  -F "files=@image.png" \
+  https://your-username--trellis-api-fastapi-app.modal.run/api/v1/trellis/ \
+  -o model.glb
+```
+
+### Revoking Keys
+
+To revoke a key, update the secret without that key:
+
+```bash
+# Remove "compromised-key" from the list
+modal secret create trellis-api-keys API_KEYS="valid-key1,valid-key2" --force
+```
+
+Then redeploy:
+```bash
+modal deploy modal_app.py
 ```
 
 ## Performance
