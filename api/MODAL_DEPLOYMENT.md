@@ -2,6 +2,18 @@
 
 Serverless deployment of TRELLIS API on [Modal](https://modal.com) with GPU support.
 
+## Getting an API Key
+
+To use this API, you need an API key. Contact the API owner to request access:
+
+- **Email**: [your-email@example.com]
+- **GitHub Issues**: [Open an issue](https://github.com/dhruv-nayar/trellis-local-tool/issues) requesting API access
+
+Once you have a key, include it in all requests:
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" ...
+```
+
 ## Live Endpoints
 
 Once deployed, your API will be available at:
