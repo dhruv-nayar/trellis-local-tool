@@ -2,6 +2,17 @@
 
 Serverless deployment of TRELLIS API on [Modal](https://modal.com) with GPU support.
 
+## Live API
+
+**Base URL:** https://nayardhruv0--trellis-api-fastapi-app.modal.run
+
+| Endpoint | Method | URL |
+|----------|--------|-----|
+| Docs | GET | https://nayardhruv0--trellis-api-fastapi-app.modal.run/docs |
+| Health | GET | https://nayardhruv0--trellis-api-fastapi-app.modal.run/health |
+| RemBG | POST | https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/rembg/ |
+| TRELLIS | POST | https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/trellis/ |
+
 ## Getting an API Key
 
 To use this API, you need an API key. Contact the API owner to request access:
@@ -13,12 +24,6 @@ Once you have a key, include it in all requests:
 ```bash
 curl -H "Authorization: Bearer YOUR_API_KEY" ...
 ```
-
-## Live Endpoints
-
-Once deployed, your API will be available at:
-- **Base URL**: `https://<your-username>--trellis-api-fastapi-app.modal.run`
-- **Swagger Docs**: `https://<your-username>--trellis-api-fastapi-app.modal.run/docs`
 
 ## Features
 
