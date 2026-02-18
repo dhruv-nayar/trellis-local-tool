@@ -6,12 +6,23 @@ Serverless deployment of TRELLIS API on [Modal](https://modal.com) with GPU supp
 
 **Base URL:** https://nayardhruv0--trellis-api-fastapi-app.modal.run
 
-| Endpoint | Method | URL |
-|----------|--------|-----|
-| Docs | GET | https://nayardhruv0--trellis-api-fastapi-app.modal.run/docs |
-| Health | GET | https://nayardhruv0--trellis-api-fastapi-app.modal.run/health |
-| RemBG | POST | https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/rembg/ |
-| TRELLIS | POST | https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/trellis/ |
+### Sync Endpoints (blocking)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| Health | GET | `/health` |
+| RemBG | POST | `/api/v1/rembg/` |
+| TRELLIS | POST | `/api/v1/trellis/` |
+
+### Async Endpoints (non-blocking with polling)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| RemBG Async | POST | `/api/v1/rembg/async/` |
+| TRELLIS Async | POST | `/api/v1/trellis/async/` |
+| Job Status | GET | `/api/v1/jobs/{job_id}` |
+| Job Result | GET | `/api/v1/jobs/{job_id}/result` |
+| Cancel Job | DELETE | `/api/v1/jobs/{job_id}` |
 
 ## Getting an API Key
 
@@ -29,6 +40,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" ...
 
 - **GPU-Accelerated TRELLIS**: Runs on NVIDIA A10G (24GB VRAM)
 - **CPU-Based RemBG**: Lightweight background removal
+- **Sync & Async APIs**: Blocking endpoints for simple use, async endpoints with job polling for long-running tasks
 - **Serverless**: Auto-scales to zero when not in use
 - **Model Caching**: ~5GB TRELLIS model cached on Modal Volume
 - **No Infrastructure Management**: Modal handles everything
@@ -93,7 +105,7 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "version": "2.1.0-modal-gpu"
+  "version": "2.3.0-modal-async"
 }
 ```
 
@@ -147,6 +159,112 @@ curl -X POST \
   -F "files=@object.png" \
   https://your-username--trellis-api-fastapi-app.modal.run/api/v1/trellis/ \
   --output model.glb
+```
+
+### Async Endpoints
+
+For long-running tasks, use async endpoints to avoid blocking. Submit a job, poll for status, then download the result.
+
+#### Submit Async Job
+
+```bash
+POST /api/v1/trellis/async/   # or /api/v1/rembg/async/
+Content-Type: multipart/form-data
+Authorization: Bearer your-api-key
+```
+
+**Response:**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "job_type": "trellis",
+  "created_at": "2024-02-15T10:30:00Z",
+  "message": "Job submitted for processing",
+  "poll_url": "/api/v1/jobs/550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+#### Poll Job Status
+
+```bash
+GET /api/v1/jobs/{job_id}
+Authorization: Bearer your-api-key
+```
+
+**Response (processing):**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "progress": 50,
+  "message": "Running inference..."
+}
+```
+
+**Response (completed):**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "progress": 100,
+  "message": "Successfully generated 3D model",
+  "download_url": "/api/v1/jobs/550e8400-e29b-41d4-a716-446655440000/result",
+  "output_size_bytes": 2456789
+}
+```
+
+#### Download Result
+
+```bash
+GET /api/v1/jobs/{job_id}/result
+Authorization: Bearer your-api-key
+```
+
+**Response:** Binary file (GLB for TRELLIS, PNG for RemBG)
+
+#### Cancel Job
+
+```bash
+DELETE /api/v1/jobs/{job_id}
+Authorization: Bearer your-api-key
+```
+
+**Example Async Workflow:**
+```bash
+# Step 1: Submit async job
+JOB_RESPONSE=$(curl -s -X POST \
+  -H "Authorization: Bearer $TRELLIS_API_KEY" \
+  -F "files=@image.png" \
+  https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/trellis/async/)
+
+JOB_ID=$(echo $JOB_RESPONSE | jq -r '.job_id')
+echo "Job submitted: $JOB_ID"
+
+# Step 2: Poll until complete
+while true; do
+  STATUS=$(curl -s -H "Authorization: Bearer $TRELLIS_API_KEY" \
+    "https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/jobs/$JOB_ID")
+
+  JOB_STATUS=$(echo $STATUS | jq -r '.status')
+  echo "Status: $JOB_STATUS"
+
+  if [ "$JOB_STATUS" = "completed" ]; then
+    break
+  elif [ "$JOB_STATUS" = "failed" ]; then
+    echo "Job failed: $(echo $STATUS | jq -r '.error')"
+    exit 1
+  fi
+
+  sleep 5
+done
+
+# Step 3: Download result
+curl -H "Authorization: Bearer $TRELLIS_API_KEY" \
+  "https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/jobs/$JOB_ID/result" \
+  -o model.glb
+
+echo "Downloaded: model.glb"
 ```
 
 ## Usage Examples
@@ -214,6 +332,64 @@ def image_to_3d(image_path: str, output_path: str, seed: int = 0):
 # Usage
 remove_background("photo.jpg", "photo_nobg.png")
 image_to_3d("photo_nobg.png", "model.glb", seed=42)
+```
+
+### Python Client (Async)
+
+```python
+import requests
+import time
+
+BASE_URL = "https://nayardhruv0--trellis-api-fastapi-app.modal.run"
+API_KEY = "your-api-key"
+HEADERS = {"Authorization": f"Bearer {API_KEY}"}
+
+def image_to_3d_async(image_path: str, output_path: str, seed: int = 0, poll_interval: int = 5):
+    """Convert image to 3D GLB model using async endpoint with polling."""
+    # Submit job
+    with open(image_path, "rb") as f:
+        response = requests.post(
+            f"{BASE_URL}/api/v1/trellis/async/",
+            headers=HEADERS,
+            files={"files": f},
+            data={"seed": seed}
+        )
+    response.raise_for_status()
+    job_data = response.json()
+    job_id = job_data["job_id"]
+    print(f"Job submitted: {job_id}")
+
+    # Poll for completion
+    while True:
+        status_response = requests.get(
+            f"{BASE_URL}/api/v1/jobs/{job_id}",
+            headers=HEADERS
+        )
+        status_response.raise_for_status()
+        status = status_response.json()
+
+        print(f"Status: {status['status']} ({status['progress']}%) - {status.get('message', '')}")
+
+        if status["status"] == "completed":
+            break
+        elif status["status"] == "failed":
+            raise Exception(f"Job failed: {status.get('error')}")
+
+        time.sleep(poll_interval)
+
+    # Download result
+    result_response = requests.get(
+        f"{BASE_URL}/api/v1/jobs/{job_id}/result",
+        headers=HEADERS
+    )
+    result_response.raise_for_status()
+
+    with open(output_path, "wb") as f:
+        f.write(result_response.content)
+    print(f"Saved: {output_path} ({len(result_response.content)} bytes)")
+
+# Usage
+image_to_3d_async("photo_nobg.png", "model.glb", seed=42)
 ```
 
 ### JavaScript/TypeScript
@@ -448,27 +624,36 @@ Estimated costs per request:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Modal Platform                        │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  ┌──────────────────┐    ┌────────────────────────────┐ │
-│  │  FastAPI App     │    │  TRELLIS GPU Function      │ │
-│  │  (CPU, rembg)    │───▶│  (A10G, 24GB VRAM)         │ │
-│  │                  │    │                            │ │
-│  │  /api/v1/rembg/  │    │  - Model loading           │ │
-│  │  /api/v1/trellis/│    │  - Inference               │ │
-│  │  /health         │    │  - Mesh extraction         │ │
-│  └──────────────────┘    └────────────────────────────┘ │
-│           │                          │                   │
-│           ▼                          ▼                   │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Modal Volume                         │   │
-│  │  /model_cache/huggingface  (HF models)           │   │
-│  │  /model_cache/torch        (PyTorch hub)         │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         Modal Platform                            │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────────────────┐    ┌──────────────────────────────┐ │
+│  │      FastAPI App        │    │   TRELLIS GPU Function       │ │
+│  │      (CPU, rembg)       │───▶│   (A10G, 24GB VRAM)          │ │
+│  │                         │    │                              │ │
+│  │  Sync:                  │    │  - Model loading             │ │
+│  │  /api/v1/rembg/         │    │  - Inference                 │ │
+│  │  /api/v1/trellis/       │    │  - Mesh extraction           │ │
+│  │                         │    └──────────────────────────────┘ │
+│  │  Async:                 │                                     │
+│  │  /api/v1/rembg/async/   │───▶ spawn() ──▶ rembg_process_async │
+│  │  /api/v1/trellis/async/ │───▶ spawn() ──▶ trellis_gpu_async   │
+│  │  /api/v1/jobs/{id}      │                                     │
+│  │  /api/v1/jobs/{id}/result│                                    │
+│  └─────────────────────────┘                                     │
+│           │                                                       │
+│           ▼                                                       │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                      Modal Storage                          │  │
+│  │  ┌─────────────────────┐  ┌──────────────────────────────┐ │  │
+│  │  │    Modal Dict       │  │       Modal Volume           │ │  │
+│  │  │  "trellis-jobs"     │  │  /model_cache (5GB models)   │ │  │
+│  │  │  (job state)        │  │  /results (GLB, PNG files)   │ │  │
+│  │  └─────────────────────┘  └──────────────────────────────┘ │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## Development
