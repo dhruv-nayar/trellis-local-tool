@@ -397,15 +397,43 @@ For issues and questions:
 - **Tool Issues**: [GitHub Issues](https://github.com/yourusername/trellis-local-tool/issues)
 - **TRELLIS Issues**: [TRELLIS GitHub](https://github.com/microsoft/TRELLIS/issues)
 
+## Cloud API (Modal)
+
+For production deployments without managing infrastructure, use the **Modal serverless API**:
+
+- **GPU-accelerated** - A10G with 24GB VRAM
+- **Sync & Async endpoints** - Block for immediate results or poll for status
+- **Webhook callbacks** - Get notified when jobs complete
+- **Auto-scaling** - Scales to zero when idle, handles bursts automatically
+
+See [`api/MODAL_DEPLOYMENT.md`](api/MODAL_DEPLOYMENT.md) for full documentation.
+
+### Quick Example with Callbacks
+
+```bash
+# Submit async job with callback
+curl -X POST \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "files=@image.png" \
+  "https://your-app.modal.run/api/v1/trellis/async/?callback_url=https://your-server.com/webhook"
+
+# Your webhook receives:
+# {
+#   "job_id": "...",
+#   "status": "completed",
+#   "download_url": "https://your-app.modal.run/api/v1/jobs/.../result"
+# }
+```
+
 ## Roadmap
 
+- [x] REST API server mode (Modal cloud deployment)
 - [ ] Web interface option
 - [ ] Docker containerization
 - [ ] Batch resume capability
 - [ ] Video frame extraction
 - [ ] Multi-GPU support
 - [ ] Cloud integration (S3, GCS)
-- [ ] REST API server mode
 
 ## Changelog
 

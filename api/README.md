@@ -10,6 +10,7 @@ REST API for converting images to 3D GLB files using Microsoft's TRELLIS.
 - 🐳 Docker support
 - 📝 OpenAPI documentation
 - 🌐 CORS enabled
+- ☁️ **Modal serverless deployment** with webhook callbacks
 
 ## Quick Start
 
@@ -355,6 +356,54 @@ client = Client("JeffreyXiang/TRELLIS", timeout=300)
 - Limit concurrent jobs
 - Use queue system
 - Scale horizontally
+
+## Modal Serverless Deployment
+
+For production without managing infrastructure, deploy to [Modal](https://modal.com):
+
+```bash
+cd api
+pip install modal
+modal deploy modal_app.py
+```
+
+### Modal Features
+
+| Feature | Description |
+|---------|-------------|
+| **Sync endpoints** | `/api/v1/trellis/` and `/api/v1/rembg/` - block until result |
+| **Async endpoints** | `/api/v1/trellis/async/` and `/api/v1/rembg/async/` - return job_id immediately |
+| **Job polling** | `GET /api/v1/jobs/{job_id}` - check status and progress |
+| **Webhook callbacks** | Get POST notification when job completes |
+| **Auto-scaling** | Scales to zero, handles traffic bursts |
+| **GPU acceleration** | A10G with 24GB VRAM |
+
+### Webhook Callbacks
+
+Submit async jobs with a callback URL to receive notifications:
+
+```bash
+# With callback - receive POST when done
+curl -X POST \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "files=@image.png" \
+  "https://your-app.modal.run/api/v1/trellis/async/?callback_url=https://your-server.com/webhook"
+```
+
+Callback payload on completion:
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "job_type": "trellis",
+  "progress": 100,
+  "message": "Successfully generated 3D model",
+  "output_size_bytes": 2456789,
+  "download_url": "https://your-app.modal.run/api/v1/jobs/.../result"
+}
+```
+
+See [`MODAL_DEPLOYMENT.md`](MODAL_DEPLOYMENT.md) for complete documentation.
 
 ## License
 
