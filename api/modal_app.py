@@ -49,6 +49,7 @@ rembg_image = (
         "pillow>=9.0.0",
         "rembg[cpu]>=2.0.50",
         "onnxruntime>=1.16.0",
+        "requests>=2.28.0",  # For callback webhooks
     )
 )
 
@@ -71,9 +72,9 @@ trellis_gpu_image = (
         "PATH": "/root/miniconda3/envs/trellis/bin:/root/miniconda3/bin:$PATH",
         "CONDA_DEFAULT_ENV": "trellis",
     })
-    # Install trimesh for GLB export
+    # Install trimesh for GLB export and requests for callbacks
     .run_commands([
-        "/opt/conda/envs/trellis/bin/pip install trimesh",
+        "/opt/conda/envs/trellis/bin/pip install trimesh requests",
     ])
 )
 
@@ -98,6 +99,48 @@ class JobStatus(str, Enum):
 class JobType(str, Enum):
     TRELLIS = "trellis"
     REMBG = "rembg"
+
+
+def send_callback(callback_url: str, job_data: Dict[str, Any], base_url: str = "") -> bool:
+    """Send job status to callback URL. Returns True if successful."""
+    import requests
+
+    if not callback_url:
+        return False
+
+    try:
+        # Build callback payload
+        payload = {
+            "job_id": job_data["job_id"],
+            "status": job_data["status"],
+            "job_type": job_data["job_type"],
+            "created_at": job_data["created_at"],
+            "completed_at": job_data.get("completed_at"),
+            "progress": job_data.get("progress", 0),
+            "message": job_data.get("message"),
+            "error": job_data.get("error"),
+            "output_size_bytes": job_data.get("output_size_bytes"),
+        }
+
+        # Add download URL if completed
+        if job_data["status"] == "completed" and job_data.get("output_filename"):
+            payload["download_url"] = f"{base_url}/api/v1/jobs/{job_data['job_id']}/result"
+
+        print(f"[Job {job_data['job_id']}] Sending callback to {callback_url}")
+
+        response = requests.post(
+            callback_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+
+        print(f"[Job {job_data['job_id']}] Callback response: {response.status_code}")
+        return response.status_code < 400
+
+    except Exception as e:
+        print(f"[Job {job_data['job_id']}] Callback failed: {e}")
+        return False
 
 
 class ModalJobStore:
@@ -288,7 +331,8 @@ def trellis_gpu_inference_async(
     job_id: str,
     image_bytes: bytes,
     seed: int = 0,
-    texture_size: int = 1024
+    texture_size: int = 1024,
+    callback_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Async TRELLIS inference that updates job state and saves to volume."""
     import os
@@ -392,7 +436,7 @@ def trellis_gpu_inference_async(
         model_volume.commit()
 
         # Mark complete
-        job_store.update_job(
+        job_data = job_store.update_job(
             job_id,
             status=JobStatus.COMPLETED.value,
             progress=100,
@@ -400,6 +444,14 @@ def trellis_gpu_inference_async(
             output_filename=output_filename,
             output_size_bytes=len(glb_bytes),
         )
+
+        # Send callback if configured
+        if callback_url:
+            send_callback(
+                callback_url,
+                job_data,
+                base_url="https://nayardhruv0--trellis-api-fastapi-app.modal.run"
+            )
 
         # Cleanup
         del pipeline
@@ -416,12 +468,21 @@ def trellis_gpu_inference_async(
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()[:500]}"
         print(f"[Job {job_id}] Error: {error_msg}")
-        job_store.update_job(
+        job_data = job_store.update_job(
             job_id,
             status=JobStatus.FAILED.value,
             error=error_msg,
             message="Processing failed",
         )
+
+        # Send callback on failure too
+        if callback_url:
+            send_callback(
+                callback_url,
+                job_data,
+                base_url="https://nayardhruv0--trellis-api-fastapi-app.modal.run"
+            )
+
         raise
 
 
@@ -438,6 +499,7 @@ def rembg_process_async(
     image_bytes: bytes,
     model: str = "u2net",
     alpha_matting: bool = False,
+    callback_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Async RemBG processing that updates job state and saves to volume."""
     from rembg import remove, new_session
@@ -483,7 +545,7 @@ def rembg_process_async(
 
         results_volume.commit()
 
-        job_store.update_job(
+        job_data = job_store.update_job(
             job_id,
             status=JobStatus.COMPLETED.value,
             progress=100,
@@ -491,6 +553,14 @@ def rembg_process_async(
             output_filename=output_filename,
             output_size_bytes=len(output_bytes),
         )
+
+        # Send callback if configured
+        if callback_url:
+            send_callback(
+                callback_url,
+                job_data,
+                base_url="https://nayardhruv0--trellis-api-fastapi-app.modal.run"
+            )
 
         return {
             "job_id": job_id,
@@ -503,12 +573,21 @@ def rembg_process_async(
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()[:500]}"
         print(f"[Job {job_id}] Error: {error_msg}")
-        job_store.update_job(
+        job_data = job_store.update_job(
             job_id,
             status=JobStatus.FAILED.value,
             error=error_msg,
             message="Processing failed",
         )
+
+        # Send callback on failure too
+        if callback_url:
+            send_callback(
+                callback_url,
+                job_data,
+                base_url="https://nayardhruv0--trellis-api-fastapi-app.modal.run"
+            )
+
         raise
 
 
@@ -699,9 +778,13 @@ def fastapi_app():
     async def trellis_async(
         files: list[UploadFile] = File(...),
         seed: int = 0,
+        callback_url: Optional[str] = None,
         api_key: str = Depends(verify_api_key),
     ):
-        """Submit async TRELLIS job. Returns immediately with job_id for polling."""
+        """Submit async TRELLIS job. Returns immediately with job_id for polling.
+
+        Optionally provide callback_url to receive a POST notification when job completes.
+        """
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
@@ -716,6 +799,7 @@ def fastapi_app():
                 image_bytes=image_bytes,
                 seed=seed,
                 texture_size=1024,
+                callback_url=callback_url,
             )
 
             # Create job record
@@ -727,6 +811,7 @@ def fastapi_app():
                 input_filename=file.filename or "image.png",
                 seed=seed,
                 texture_size=1024,
+                callback_url=callback_url,
             )
 
             return AsyncJobResponse(
@@ -734,7 +819,7 @@ def fastapi_app():
                 status="pending",
                 job_type="trellis",
                 created_at=job_data["created_at"],
-                message="Job submitted for processing",
+                message="Job submitted for processing" + (" (callback configured)" if callback_url else ""),
                 poll_url=f"/api/v1/jobs/{job_id}",
             )
 
@@ -746,9 +831,13 @@ def fastapi_app():
         files: list[UploadFile] = File(...),
         model: str = "u2net",
         alpha_matting: bool = False,
+        callback_url: Optional[str] = None,
         api_key: str = Depends(verify_api_key),
     ):
-        """Submit async RemBG job. Returns immediately with job_id for polling."""
+        """Submit async RemBG job. Returns immediately with job_id for polling.
+
+        Optionally provide callback_url to receive a POST notification when job completes.
+        """
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
@@ -762,6 +851,7 @@ def fastapi_app():
                 image_bytes=image_bytes,
                 model=model,
                 alpha_matting=alpha_matting,
+                callback_url=callback_url,
             )
 
             job_store = ModalJobStore(job_dict)
@@ -772,6 +862,7 @@ def fastapi_app():
                 input_filename=file.filename or "image.png",
                 model=model,
                 alpha_matting=alpha_matting,
+                callback_url=callback_url,
             )
 
             return AsyncJobResponse(
@@ -779,7 +870,7 @@ def fastapi_app():
                 status="pending",
                 job_type="rembg",
                 created_at=job_data["created_at"],
-                message="Job submitted for processing",
+                message="Job submitted for processing" + (" (callback configured)" if callback_url else ""),
                 poll_url=f"/api/v1/jobs/{job_id}",
             )
 

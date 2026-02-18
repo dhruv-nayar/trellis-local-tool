@@ -163,7 +163,9 @@ curl -X POST \
 
 ### Async Endpoints
 
-For long-running tasks, use async endpoints to avoid blocking. Submit a job, poll for status, then download the result.
+For long-running tasks, use async endpoints to avoid blocking. You have two options:
+1. **Polling**: Submit job, poll status endpoint until complete
+2. **Callback**: Submit job with `callback_url`, receive POST notification when done
 
 #### Submit Async Job
 
@@ -173,6 +175,13 @@ Content-Type: multipart/form-data
 Authorization: Bearer your-api-key
 ```
 
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| files | File | Yes | Image file |
+| seed | int | No | Random seed (TRELLIS only) |
+| callback_url | string | No | URL to POST results when job completes |
+
 **Response:**
 ```json
 {
@@ -180,7 +189,7 @@ Authorization: Bearer your-api-key
   "status": "pending",
   "job_type": "trellis",
   "created_at": "2024-02-15T10:30:00Z",
-  "message": "Job submitted for processing",
+  "message": "Job submitted for processing (callback configured)",
   "poll_url": "/api/v1/jobs/550e8400-e29b-41d4-a716-446655440000"
 }
 ```
@@ -230,7 +239,51 @@ DELETE /api/v1/jobs/{job_id}
 Authorization: Bearer your-api-key
 ```
 
-**Example Async Workflow:**
+#### Callback Webhook
+
+When you provide a `callback_url`, the API will POST the job result to your URL when the job completes or fails.
+
+**Callback Payload (success):**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "job_type": "trellis",
+  "created_at": "2024-02-15T10:30:00Z",
+  "completed_at": "2024-02-15T10:32:00Z",
+  "progress": 100,
+  "message": "Successfully generated 3D model",
+  "output_size_bytes": 2456789,
+  "download_url": "https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/jobs/550e8400-e29b-41d4-a716-446655440000/result"
+}
+```
+
+**Callback Payload (failure):**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "failed",
+  "job_type": "trellis",
+  "created_at": "2024-02-15T10:30:00Z",
+  "completed_at": "2024-02-15T10:31:00Z",
+  "progress": 30,
+  "message": "Processing failed",
+  "error": "CUDA out of memory..."
+}
+```
+
+**Example with Callback:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $TRELLIS_API_KEY" \
+  -F "files=@image.png" \
+  -F "callback_url=https://your-server.com/webhook/trellis" \
+  https://nayardhruv0--trellis-api-fastapi-app.modal.run/api/v1/trellis/async/
+```
+
+Your webhook endpoint will receive a POST request with the JSON payload above when the job completes.
+
+**Example Async Workflow (Polling - without callback):**
 ```bash
 # Step 1: Submit async job
 JOB_RESPONSE=$(curl -s -X POST \
