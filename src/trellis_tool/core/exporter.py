@@ -157,6 +157,11 @@ class GLBExporter:
 
         logger.debug(f"Created mesh: {len(vertices)} vertices, {len(faces)} faces")
 
+        # Correct TRELLIS orientation: models are generated lying on their back.
+        # Apply a -90 degree rotation around the X axis so they stand upright.
+        rotation = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
+        mesh.apply_transform(rotation)
+
         return mesh
 
     def _optimize_mesh(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:

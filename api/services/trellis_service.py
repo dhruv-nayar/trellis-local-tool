@@ -7,6 +7,9 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Protocol
 
+import numpy as np
+import trimesh
+
 from api.models.enums import TrellisBackend
 from api.config import settings
 
@@ -21,6 +24,12 @@ class TrellisClient(Protocol):
         image_paths: List[Path],
         output_path: Path,
         seed: int = 1,
+        texture_size: int = 2048,
+        mesh_simplify: float = 0.95,
+        ss_guidance_strength: float = 7.5,
+        ss_sampling_steps: int = 12,
+        slat_guidance_strength: float = 3.0,
+        slat_sampling_steps: int = 12,
     ) -> Path:
         """Process images to 3D GLB"""
         ...
@@ -67,7 +76,11 @@ class TrellisService:
         backend: Optional[TrellisBackend] = None,
         seed: int = 1,
         texture_size: int = 2048,
-        optimize: bool = True,
+        mesh_simplify: float = 0.95,
+        ss_guidance_strength: float = 7.5,
+        ss_sampling_steps: int = 12,
+        slat_guidance_strength: float = 3.0,
+        slat_sampling_steps: int = 12,
     ) -> Path:
         """
         Process images to 3D GLB using the specified backend.
@@ -77,8 +90,12 @@ class TrellisService:
             output_path: Path for output GLB file
             backend: Backend to use (default: from settings)
             seed: Random seed for reproducibility
-            texture_size: Texture resolution (V2 only)
-            optimize: Whether to optimize mesh (V2 only)
+            texture_size: Texture resolution for GLB export
+            mesh_simplify: Mesh simplification ratio (0.8-0.99)
+            ss_guidance_strength: Stage 1 guidance strength (0.0-10.0)
+            ss_sampling_steps: Stage 1 sampling steps (1-50)
+            slat_guidance_strength: Stage 2 guidance strength (0.0-10.0)
+            slat_sampling_steps: Stage 2 sampling steps (1-50)
 
         Returns:
             Path to output GLB file
@@ -89,7 +106,29 @@ class TrellisService:
         logger.info(f"Processing {len(image_paths)} image(s) with backend: {backend.value}")
 
         client = self.get_client(backend)
-        return client.process(image_paths, output_path, seed)
+        result_path = client.process(
+            image_paths=image_paths,
+            output_path=output_path,
+            seed=seed,
+            texture_size=texture_size,
+            mesh_simplify=mesh_simplify,
+            ss_guidance_strength=ss_guidance_strength,
+            ss_sampling_steps=ss_sampling_steps,
+            slat_guidance_strength=slat_guidance_strength,
+            slat_sampling_steps=slat_sampling_steps,
+        )
+
+        # Correct TRELLIS orientation: models are generated lying on their back.
+        # Apply a -90 degree rotation around the X axis so they stand upright.
+        logger.info(f"Applying orientation fix to {result_path}")
+        scene = trimesh.load(str(result_path), force="scene")
+        rotation = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
+        for geom in scene.geometry.values():
+            geom.apply_transform(rotation)
+        scene.export(str(result_path))
+        logger.info("Orientation fix applied")
+
+        return result_path
 
     def health_check(self, backend: Optional[TrellisBackend] = None) -> bool:
         """Check health of the specified backend"""
